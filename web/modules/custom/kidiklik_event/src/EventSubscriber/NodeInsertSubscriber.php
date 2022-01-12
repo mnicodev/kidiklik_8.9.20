@@ -7,6 +7,7 @@ use Drupal\kidiklik_event\Event\NodeInsertEvent;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\HttpResponse;
 use Drupal\kidiklik_base\KidiklikEntity;
+use Drupal\node\Entity\Node;
 
 class NodeInsertSubscriber implements EventSubscriberInterface {
 	public function onNodeInsert(NodeInsertEvent $event) {
@@ -60,9 +61,17 @@ class NodeInsertSubscriber implements EventSubscriberInterface {
 				$adherent->save();
 			}
 
-			/* test de la période d'un pub */
-			if($type=="publicite") {
-				//kint($entity->get("field_conditionne_nombre_aff"));exit;
+			$blocs=$entity->field_mise_en_avant->getValue();
+			if(!empty($blocs)) {
+				foreach($blocs as $bloc) {
+					$bloc = Node::load($bloc['target_id']);
+					if(empty($bloc->get('field_lien')->value)) {
+						$bloc->set('field_lien', \Drupal::service('path.alias_manager')->getAliasByPath('/node/'.$entity->id()));
+						$bloc->save();
+					}
+					
+				}
+				
 			}
 
 		}

@@ -28,12 +28,13 @@ class SortiesBoutonBlock extends BlockBase {
     
     $build['#theme'] = 'sortie_moment_bouton';
     $node = \Drupal::request()->get('node');
-
-    if($node->getType() === 'activite') {
-      $build['#ref_act'] = $node->id();
-    } else {
-      $build['#ref_act'] = current($node->get('field_activite')->getValue())['target_id'];
-    }
+	if(!empty($node)) {
+		if($node->getType() === 'activite') {
+    	  $build['#ref_act'] = $node->id();
+	    } else {
+      		$build['#ref_act'] = current($node->get('field_activite')->getValue())['target_id'];
+		}
+	}
 
     return $build;
   }

@@ -76,7 +76,10 @@ class KidiklikCommands extends DrushCommands
     'url'=>FALSE,
     'geolocation'=>FALSE,
     'client' => FALSE,
-    'filtres' => FALSE])
+    'filtres' => FALSE,
+    'migrate' => FALSE,
+    'delete' => FALSE,
+    'rubrique_activite' => FALSE])
   {
     if ($name == "help") {
       echo "Migration de la base kidiklik : \n";
@@ -86,9 +89,162 @@ class KidiklikCommands extends DrushCommands
       echo "- pour client : --contact, --adherent, --delcontact\n";
       echo "- pour adherent : --contact, --delcontact\n";
 
-
     } else if ($name == "repasse") {
+    } else if ($name == "taxonomy") {
+      if($options['rubrique_activite'] === true) {
+        $terms = \Drupal::entityTypeManager()
+        ->getStorage('taxonomy_term')
+        ->loadByProperties(
+          [
+            'vid' => 'rubriques_activite'
+          ]);
 
+        foreach($terms as $term_id) {
+          
+          $term = \Drupal::entityTypeManager()
+          ->getStorage('taxonomy_term')
+          ->load($term_id->id());
+          $term->set('name', htmlspecialchars_decode($term->getName()));
+          $term->save();
+          var_dump($term->getName());
+        }
+
+
+      }
+    } else if ($name == "editos" || $name === "tests") {
+      
+      if($options['delete']===TRUE) {
+        /*$nodes=\Drupal::entityTypeManager()->getStorage("node")->loadByProperties([
+          'type' => 'article',
+        ]);*/
+        $connection = \Drupal::database();
+        if($name === 'article') {
+          $query= $connection->select('node','n')->fields('n',['nid'])->condition('type','article','=');
+        }else {
+          $query= $connection->select('node','n')->fields('n',['nid'])->condition('type','reportage','=');
+        }
+        
+        $rs=$query->execute();
+
+        while($node = $rs->fetch()) {
+          $n=Node::load((int)$node->nid);
+          var_dump($n->id());
+          $n->delete();
+        }
+
+      } if($options['migrate']===TRUE) {
+        Database::setActiveConnection('kidiklik');
+        $connection = \Drupal\Core\Database\Database::getConnection();
+        $query = $connection->query("select * from ".$name);
+               
+        while($edito=$query->fetch()) {
+          $dept=(int)$edito->dept;
+          if($dept>=22) $dept--;
+
+          $adherent = null;
+          if($edito->ref_adherent !== null) {
+            $adherent = current(\Drupal::entityTypeManager()->getStorage("node")->loadByProperties([
+              'type' => 'adherent',
+              'field_ref_adherent' => $edito->ref_adherent
+            ]));
+            $adherent_id = null;
+            if($adherent !== false) {
+              $adherent_id = $adherent->id();
+            }
+            
+          }
+
+         
+          $node = Node::create([
+            'type' => ($name==='editos'?'article':'reportage'),
+            'title' => str_replace(["&#39;","&#34;"], ["'",'"'],htmlspecialchars_decode($edito->titre)),
+            'body' => str_replace(["&#39;","&#34;"], ["'",'"'],htmlspecialchars_decode($edito->resume)), 
+            'field_video'=> $edito->video,
+            'field_google_map' =>  $edito->map,
+            'field_ref_adherent' => $edito->ref_adherent,
+            'uid' => 1
+          ]);
+          var_dump($edito->titre);
+
+          $node->save();
+          $term_dep=current(\Drupal::entityTypeManager()
+            ->getStorage("taxonomy_term")
+            ->loadByProperties(['vid' => 'departement','name'=>$dept]));
+
+          if($term_dep !== false) {
+            $node->__set('field_departement',$term_dep->id());
+          }
+          if($adherent_id !== null) {
+            $node->__set('field_adherent', $adherent_id);
+          }
+          
+
+          $date = \Drupal\paragraphs\Entity\Paragraph::create([
+            'type' => 'date',
+            'field_date_de_debut' => [
+              'value' => $edito->date_debut
+            ],
+            'field_date_de_fin' => [
+              'value' => $edito->date_fin
+            ]
+          ]);
+          //$date->save();
+          $node->get('field_date')->appendItem($date);
+
+          if($name === 'editos') {
+            $node->__set('field_ref_article' , $edito->id_edito);
+             $query2 = $connection->query("select nom from asso_rubriques_editos are join editos_rubriques er on er.id_rubrique = are.ref_rubrique where are.ref_edito =".$edito->id_edito);
+            while($rub_edito = $query2->fetch()) {
+              
+              $term = current(\Drupal::entityTypeManager()
+              ->getStorage('taxonomy_term')
+              ->loadByProperties(
+                [
+                  'vid' => 'rubrique_article',
+                  'name' => $rub_edito->nom
+                ]));
+              
+                if(!empty($term)) {
+                  var_dump("RUB : ".$term->getName());
+                  $node->get('field_rubriques')->appendItem($term->id());
+                }
+              
+            }
+         
+          } else {
+            $node->__set('field_ref_reportage' , $edito->id_test);
+          }
+
+
+          if($name === 'editos') {
+            $query3 = $connection->query("select * from editos_datas  where ref_edito =".$edito->id_edito);
+          } else {
+            $query3 = $connection->query("select * from tests_datas  where ref_test =".$edito->id_test);
+          }
+          while($para_edito = $query3->fetch()) {
+            $paragraph = \Drupal\paragraphs\Entity\Paragraph::create([
+              'type' => 'paragraphe',
+              'field_titre' => [
+                'value' => str_replace(["&#39;","&#34;"], ["'",'"'],htmlspecialchars_decode($para_edito->titre))
+              ],
+              'field_description' => [
+                'value' => str_replace(["&#39;","&#34;"], ["'",'"'],htmlspecialchars_decode($para_edito->description))
+              ],
+              'field_url'=> [
+                'value' => $para_edito->url??null
+              ],
+              'field_image_save'=> [
+                'value' => $para_edito->image
+              ],
+            ]);
+            $node->get('field_paragraphes')->appendItem($paragraph);
+            //$paragraph->save();
+          }
+
+          $node->save();
+         //exit; 
+        }
+      }
     } else if ($name == "dept") {
       $rs = \Drupal::entityTypeManager()
         ->getStorage("taxonomy_term")
@@ -105,49 +261,7 @@ class KidiklikCommands extends DrushCommands
       }
 
 
-    }/* elseif ($name === 'drupal_rubrique') {
-      $terms = \Drupal::entityTypeManager()->getStorage("taxonomy_term")->loadByProperties([
-        'vid' => 'rubriques_activite',
-      ]);
-      foreach ($terms as $term) {
-        var_dump($term->getParent());
-      }
-
-    } elseif ($name === 'kidi_activites_galeries') {
-      Database::setActiveConnection('kidiklik');
-      $connection = \Drupal\Core\Database\Database::getConnection();
-      $query = $connection->query("select * from activites_galeries");
-
-    } elseif ($name === 'kidi_activites_rubriques') {
-      Database::setActiveConnection('kidiklik');
-      $connection = \Drupal\Core\Database\Database::getConnection();
-      $query = $connection->query("SELECT ra.ref_activite, r.nom, r.dept FROM `asso_rubriques_activites` ra join rubriques r on r.id_rubrique = ra.ref_rubrique ");
-      while ($item = $query->fetch()) {
-        $nom = html_entity_decode($item->nom);
-        $nom = trim(str_replace("&#039;", "'", $nom));
-
-       // $term = Term::create([
-       //   'name' => 'test',
-        //  'vid' => 'client',
-        //])->save();
-
-        $dept = current(\Drupal::entityTypeManager()->getStorage("taxonomy_term")->loadByProperties([
-          'vid' => 'departement',
-          'field_ref_dept' => $item->dept
-        ]));
-        if (!empty($dept)) {
-          $rub = current(\Drupal::entityTypeManager()->getStorage("taxonomy_term")->loadByProperties([
-            'vid' => 'rubriques_activite',
-            'field_departement' => $dept->id(),
-            'name' => $nom
-          ]));
-          echo $item->ref_activite;
-          var_dump($nom);
-        }
-
-      }
-    } */
-    elseif($name === 'kidi_agendas') {
+    } elseif($name === 'kidi_agendas') {
 
       $connection = \Drupal::database();
       $query= $connection->select('node__field_ref_agenda','n')
@@ -571,7 +685,7 @@ class KidiklikCommands extends DrushCommands
        * TRAITEMENT PAR TYPE DE CONTENU
        */
 
-      $rs = db_query('select * from node where nid>=42413 and type="' . $name . '"', [], ['fetch' => 'node']);
+      $rs = db_query('select * from node where type="' . $name . '"', [], ['fetch' => 'node']);
       if($options['filtres'] === true) {
         $filtres = [];
         Database::setActiveConnection('kidiklik');
@@ -611,6 +725,24 @@ class KidiklikCommands extends DrushCommands
           if ($option) {
 
             switch ($key) {
+              case 'delete':
+                $connection = \Drupal::database();
+                $query= $connection->select('node','n');
+                $query->join("node__field_date","fd","fd.entity_id=n.nid");
+                $query->join("paragraph__field_date_de_debut","fdd","fdd.entity_id=fd.field_date_target_id");
+                $query->fields('n',['nid']);
+                $query->fields('fd',['entity_id']);
+                $query->fields('fdd',['field_date_de_debut_value']);
+                $query->condition('type',$name,'=');
+                $query->condition('field_date_de_debut_value','2019-01-01','<');
+                $rs=$query->execute();
+                while($item=$rs->fetch()) {
+                  //$node=Node::load($rs->nid);
+                  //var_dump($node->get('field_date')->getValue());
+                  var_dump($item);
+
+                }
+                break;
               case 'filtres':
                 Database::setActiveConnection('kidiklik');
                 $connection = \Drupal\Core\Database\Database::getConnection();
@@ -789,17 +921,30 @@ class KidiklikCommands extends DrushCommands
 
                 break;
               case "activite":
+                $agenda = Node::load(152535);
+                $agenda->__set('field_activite', 12);
+                $agenda->validate();
+                $agenda->save();
+              var_dump($agenda->field_activite->target_id);
+              exit;
                 $item->__unset('field_activite');
                 $item->save();
-                $activite = current(\Drupal::entityTypeManager()->getStorage("node")->loadByProperties([
-                  'type' => 'activite',
-                  'field_ref_activite' => $item->get("field_ref_activite")->value
-                ]));
-                if($name === 'agenda') {
-                  $item->__set('field_activite', $activite);
-                  $item->validate();
-                  $item->save();
+                var_dump('ref activite : '.$item->get("field_ref_activite")->value);
+                if($item->get("field_ref_activite")->value !== null) {
+                  $activite = current(\Drupal::entityTypeManager()->getStorage("node")->loadByProperties([
+                    'type' => 'activite',
+                    'field_ref_activite' => $item->get("field_ref_activite")->value
+                  ]));
+                  
+                  if($name === 'agenda' && !empty($activite)) {
+                    var_dump("RECUPERATION DE L'ACTIVITE :".$activite->id());
+                    var_dump("SAUVEGARDE DANS : ".$item->id());
+                    $item->__set('field_activite', $activite->id());
+                    //$item->validate();
+                    $item->save();
+                  }
                 }
+                
                 break;
               /**
                * récupération des rubriques liées aux activités
@@ -897,7 +1042,8 @@ class KidiklikCommands extends DrushCommands
 
                 break;
               case 'migrate':
-                echo "ok";
+
+
                 break;
               case 'adherent':
 

@@ -129,6 +129,7 @@ function kidiklik_preprocess_views_view_unformatted(&$vars) {
     $db=\Drupal\Core\Database\Database::getConnection();
     $rs=$db->query($query.$where)->fetchAll();
     $result=[];
+	$tab=[];
     foreach($rs as $item) {
 		$node=Node::load($item->nid);
 		$type=current($node->get('field_format')->getValue())['target_id'];

@@ -4,7 +4,7 @@ namespace Drupal\kidiklik_event\EventSubscriber;
 
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Drupal\kidiklik_event\Event\NodeUpdateEvent;
-
+use Drupal\node\Entity\Node;
 
 class NodeUpdateSubscriber implements EventSubscriberInterface {
 

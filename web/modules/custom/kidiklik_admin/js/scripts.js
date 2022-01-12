@@ -19,6 +19,7 @@ function getGPS(ville) {
 
 $(function(){
 
+
 	if($('.adherent-contents').length) {
 		var kvp = document.location.search.substr(1).split('&');
 		for(item in kvp) {
@@ -44,7 +45,7 @@ $(function(){
 			$('#edit-submit').click();
 		})
 	}
-	if($('#edit-field-rubriques').length) {
+	if($('.rubriques').length) {
 
 		$('#edit-field-rubriques').select2({
 			placeholder: 'Choisissez des rubriques ...',
